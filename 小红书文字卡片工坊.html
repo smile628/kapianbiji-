@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小红书笔记卡片工坊 V20.0 - 纯净排版版</title>
+    <title>小红书笔记卡片工坊 - 增强排版版</title>
     
     <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -171,23 +171,37 @@
                         </div>
                     </div>
 
-                    <div class="flex items-center justify-between p-2 bg-white rounded border border-gray-200 sticky top-0 z-30 shadow-sm">
-                        <div class="flex items-center gap-2">
-                            <span class="text-[10px] text-gray-400">工具</span>
-                            <button @mousedown.prevent="applyBold" class="w-6 h-6 hover:bg-gray-100 rounded text-gray-600 font-bold border border-gray-200" title="加粗">B</button>
-                        </div>
-                        <button @mousedown.prevent="insertDivider" class="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500 hover:text-blue-600 font-mono">--- 强行分页</button>
-                    </div>
-
                     <div class="relative" :class="{'ring-2 ring-blue-500 rounded-lg': activeField === 'content'}">
+                        
+                        <div class="flex items-center justify-between p-2 bg-gray-50 border border-gray-300 border-b-0 rounded-t-lg select-none">
+                            <div class="flex items-center gap-3">
+                                <button @mousedown.prevent="applyBold" class="w-7 h-7 hover:bg-gray-200 rounded text-gray-700 font-bold border border-gray-300 flex items-center justify-center transition" title="加粗选中文字">
+                                    B
+                                </button>
+                                
+                                <div class="relative flex items-center group cursor-pointer" title="选中文字改色">
+                                    <div class="w-7 h-7 border border-gray-300 rounded bg-white flex flex-col items-center justify-center hover:bg-gray-100 overflow-hidden">
+                                        <span class="text-[10px] leading-none font-serif font-bold text-gray-600 mt-1">A</span>
+                                        <div class="w-4 h-1 mt-[2px]" :style="{backgroundColor: currentColor}"></div>
+                                    </div>
+                                    <input type="color" v-model="currentColor" @input="applyColor" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-gray-400">字号 {{style.fontSize}}</span>
+                                <input type="range" v-model="style.fontSize" min="14" max="24" class="w-24 h-1 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-gray-800" title="调整全文正文字号">
+                            </div>
+                        </div>
+
                         <div 
                             ref="contentDiv"
                             contenteditable="true"
-                            class="editable-div w-full p-3 border border-gray-300 rounded-lg text-sm font-mono leading-relaxed"
+                            class="editable-div w-full p-3 border border-gray-300 rounded-b-lg text-sm font-mono leading-relaxed bg-white"
                             style="min-height: 300px; max-height: 500px; overflow-y: auto;"
                             @input="onContentInput"
                             @focus="activeField = 'content'"
-                            placeholder="在此输入正文..."
+                            placeholder="在此输入正文... 选中文字可变色"
                         ></div>
                         <div class="absolute bottom-2 right-4 text-[10px] text-gray-300 pointer-events-none">支持 Markdown & HTML</div>
                     </div>
@@ -220,13 +234,9 @@
                                 <input type="color" v-model="style.bgColor" class="w-6 h-6 rounded-full overflow-hidden border-0 p-0 cursor-pointer">
                             </div>
                         </div>
-
-                        <div>
-                             <div class="flex justify-between mb-1">
-                                <span class="text-xs text-gray-500">正文设置 (字号: {{style.fontSize}}px)</span>
-                                <label class="text-xs flex items-center gap-1"><input type="checkbox" v-model="style.bodyBold"> 全文加粗</label>
-                            </div>
-                            <input type="range" v-model="style.fontSize" min="14" max="24" class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-800">
+                        
+                        <div class="flex justify-end">
+                            <label class="text-xs flex items-center gap-1 text-gray-500"><input type="checkbox" v-model="style.bodyBold"> 全文默认加粗</label>
                         </div>
                     </div>
                 </div>
@@ -295,6 +305,7 @@
                 
                 const cardTitle = ref('小红书笔记卡片工坊');
                 const cardContent = ref(''); 
+                const currentColor = ref('#ef4444'); // 默认选中文字颜色（红色）
 
                 const style = ref({
                     titleFont: 'font-serif-sc',
@@ -338,17 +349,21 @@
                 });
 
                 const applyBold = () => {
-                     document.execCommand('bold');
-                     // 触发 input 事件以更新预览
-                     if(activeField.value === 'title' && titleDiv.value) titleDiv.value.dispatchEvent(new Event('input'));
-                     if(activeField.value === 'content' && contentDiv.value) contentDiv.value.dispatchEvent(new Event('input'));
+                      document.execCommand('bold');
+                      updateContentModel();
                 };
 
-                const insertDivider = () => {
-                    const el = contentDiv.value;
-                    el.focus();
-                    document.execCommand('insertHTML', false, '<br>---<br>');
-                    el.dispatchEvent(new Event('input'));
+                const applyColor = (e) => {
+                    // 获取选中的颜色，并应用到选区
+                    const color = e.target.value;
+                    document.execCommand('foreColor', false, color);
+                    updateContentModel();
+                };
+
+                // 辅助函数：操作富文本后手动触发 Vue 更新
+                const updateContentModel = () => {
+                      if(activeField.value === 'title' && titleDiv.value) titleDiv.value.dispatchEvent(new Event('input'));
+                      if(activeField.value === 'content' && contentDiv.value) contentDiv.value.dispatchEvent(new Event('input'));
                 };
 
                 const calculatePages = async () => {
@@ -366,36 +381,34 @@
                          titleHeight = measureBox.offsetHeight;
                     }
 
-                    const rawSegments = cardContent.value.split(/<br>\s*---|<p>\s*---/); 
                     const finalPages = [];
-                    let isFirstPage = true;
                     let curPageHtml = ""; 
+                    let isFirstPage = true;
 
-                    for (let segment of rawSegments) {
-                        const htmlSegment = marked.parse(segment);
-                        const tempDiv = document.createElement('div');
-                        tempDiv.innerHTML = htmlSegment;
-                        const children = Array.from(tempDiv.children);
+                    // 使用 marked 解析内容，HTML 标签（如 <font>）会被保留
+                    const htmlFull = marked.parse(cardContent.value || '');
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = htmlFull;
+                    const children = Array.from(tempDiv.children);
 
-                        let baseLimit = isFirstPage ? (CONTENT_H - titleHeight) : CONTENT_H;
-                        if (baseLimit < 50) baseLimit = CONTENT_H; 
+                    let baseLimit = isFirstPage ? (CONTENT_H - titleHeight) : CONTENT_H;
+                    if (baseLimit < 50) baseLimit = CONTENT_H; 
+                    
+                    for (let block of children) {
+                        const blockHtml = block.outerHTML;
+                        measureBox.innerHTML = curPageHtml + blockHtml;
+                        const currentTotalH = measureBox.offsetHeight;
                         
-                        for (let block of children) {
-                            const blockHtml = block.outerHTML;
-                            measureBox.innerHTML = curPageHtml + blockHtml;
-                            const currentTotalH = measureBox.offsetHeight;
-                            
-                            if (currentTotalH <= (baseLimit + TOLERANCE)) {
-                                curPageHtml += blockHtml;
+                        if (currentTotalH <= (baseLimit + TOLERANCE)) {
+                            curPageHtml += blockHtml;
+                        } else {
+                            if (curPageHtml) {
+                                finalPages.push(curPageHtml);
+                                isFirstPage = false;
+                                baseLimit = CONTENT_H;
+                                curPageHtml = blockHtml;
                             } else {
-                                if (curPageHtml) {
-                                    finalPages.push(curPageHtml);
-                                    isFirstPage = false;
-                                    baseLimit = CONTENT_H;
-                                    curPageHtml = blockHtml;
-                                } else {
-                                    curPageHtml = blockHtml;
-                                }
+                                curPageHtml = blockHtml;
                             }
                         }
                     }
@@ -460,7 +473,6 @@
                 
                 const switchTab = (tab) => { currentTab.value = tab; };
 
-                // 极简导出逻辑：直接截图
                 const downloadImages = async () => {
                     const loading = document.getElementById('export-loading');
                     loading.style.display = 'flex';
@@ -472,12 +484,11 @@
                             const element = document.getElementById(cardId);
                             if (!element) continue;
 
-                            // 滚动到视野内，确保渲染
                             element.scrollIntoView({ block: 'start' });
                             await new Promise(r => setTimeout(r, 200));
 
                             const canvas = await html2canvas(element, {
-                                scale: 2, // 2倍清晰度足够，且速度快
+                                scale: 2, 
                                 useCORS: true, 
                                 backgroundColor: style.value.bgColor
                             });
@@ -502,7 +513,7 @@
                     cardTitle, cardContent, style, renderedPages, 
                     titleDiv, contentDiv, previewContainer, 
                     fixPunctuation, handleRichTextInput, handleFileConvert, transferTo,
-                    presetBgs, applyBold, insertDivider, downloadImages,
+                    presetBgs, applyBold, applyColor, currentColor, downloadImages,
                     onTitleInput, onContentInput
                 };
             }
