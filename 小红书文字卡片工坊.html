@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书笔记卡片工坊 V20.0 - 纯净排版版</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/turndown/dist/turndown.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mammoth/mammoth.browser.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Long+Cang&family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        /* 基础样式 */
+        body { font-family: 'Noto Sans SC', sans-serif; }
+        .font-sans-sc { font-family: 'Noto Sans SC', sans-serif; }
+        .font-serif-sc { font-family: 'Noto Serif SC', serif; }
+        .font-hand { font-family: 'Long Cang', cursive; }
+        .font-art { font-family: 'Ma Shan Zheng', cursive; }
+
+        /* 测量容器 */
+        #measure-box {
+            position: absolute; top: -9999px; left: -9999px; visibility: hidden;
+            width: 340px; 
+            padding: 0; margin: 0;
+            white-space: pre-wrap; 
+            word-wrap: break-word;
+            line-height: 1.6;
+        }
+
+        /* 排版样式 */
+        .prose h1, .prose h2, .prose h3 { margin-bottom: 0.4em; margin-top: 0.6em; line-height: 1.3; color: inherit; }
+        .prose p { margin-bottom: 0.5em; text-align: justify; word-wrap: break-word; line-height: 1.6; }
+        .prose ul { list-style-type: disc; padding-left: 1.2em; margin-bottom: 0.5em; }
+        .prose ol { list-style-type: decimal; padding-left: 1.2em; margin-bottom: 0.5em; }
+        .prose li { margin-bottom: 0.2em; }
+        
+        br { content: ""; display: block; height: 0.5em; margin: 0; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        .tab-btn.active { border-bottom: 3px solid #1f2937; color: #1f2937; font-weight: 700; background-color: #fff; }
+        .tab-btn { background-color: #f9fafb; }
+
+        /* 导出时的遮罩层 */
+        #export-loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.95); z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+            flex-direction: column; font-weight: bold; color: #333;
+        }
+
+        .editable-div:empty:before {
+            content: attr(placeholder);
+            color: #9ca3af;
+            pointer-events: none;
+            display: block; 
+        }
+        .editable-div {
+            min-height: 100px;
+            outline: none;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body class="bg-gray-200 h-screen overflow-hidden text-gray-800">
+
+    <div id="export-loading" style="display: none;">
+        <i class="fa-solid fa-check-circle text-4xl mb-4 text-green-600"></i>
+        <span class="text-lg">正在导出卡片...</span>
+    </div>
+
+    <div id="app" class="flex h-full">
+        
+        <div class="w-[500px] flex-shrink-0 h-full bg-white border-r border-gray-300 flex flex-col z-20 shadow-2xl">
+            
+            <div class="flex border-b border-gray-200">
+                <button @click="switchTab('convert')" :class="['tab-btn flex-1 py-4 text-sm transition', currentTab === 'convert' ? 'active' : 'text-gray-500 hover:text-gray-700']">
+                    1. 格式转换
+                </button>
+                <button @click="switchTab('punct')" :class="['tab-btn flex-1 py-4 text-sm transition', currentTab === 'punct' ? 'active' : 'text-gray-500 hover:text-gray-700']">
+                    2. 标点修正
+                </button>
+                <button @click="switchTab('editor')" :class="['tab-btn flex-1 py-4 text-sm transition', currentTab === 'editor' ? 'active' : 'text-gray-500 hover:text-gray-700']">
+                    3. 卡片排版
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-5 relative">
+                
+                <div v-show="currentTab === 'convert'" class="space-y-4 animate-fade-in">
+                    <div class="bg-blue-50 border border-blue-100 p-3 rounded text-xs text-blue-700">
+                        <i class="fa-solid fa-file-import mr-1"></i> 第一步：将 Word 或 网页内容转换为 Markdown。
+                    </div>
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition group relative" @click="$refs.fileInput.click()">
+                        <i class="fa-solid fa-file-word text-2xl text-gray-300 group-hover:text-blue-500 mb-1 transition"></i>
+                        <p class="text-xs text-gray-600">上传 Word (.docx) / HTML</p>
+                        <input type="file" ref="fileInput" accept=".docx,.html,.htm" class="hidden" @change="handleFileConvert">
+                    </div>
+                    <div class="relative">
+                        <div class="absolute top-2 right-2 text-[10px] text-gray-400 pointer-events-none">直接粘贴富文本</div>
+                        <div ref="richEditor" contenteditable="true" class="w-full h-28 p-3 border border-gray-300 rounded-lg overflow-y-auto text-sm focus:ring-2 focus:ring-blue-500 outline-none" @input="handleRichTextInput"></div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-gray-400 uppercase mb-1 block">转换结果</label>
+                        <textarea v-model="convertResult" class="w-full h-28 p-3 bg-gray-800 text-gray-100 rounded-lg text-xs font-mono"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button @click="transferTo('punct', convertResult)" class="py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition font-medium text-xs">
+                            下一步：去修正标点 <i class="fa-solid fa-magic ml-1"></i>
+                        </button>
+                        <button @click="transferTo('editor', convertResult)" class="py-2 bg-gray-100 text-gray-600 border border-gray-300 rounded hover:bg-gray-200 transition font-medium text-xs">
+                            跳过修正，直接排版 <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div v-show="currentTab === 'punct'" class="space-y-4">
+                     <div class="bg-green-50 border border-green-100 p-3 rounded text-xs text-green-700 leading-relaxed">
+                        <i class="fa-solid fa-check-double mr-1"></i> 第二步：智能修正标点，同时<b>保护标题和列表格式</b>。
+                    </div>
+                    <textarea v-model="punctInput" rows="10" class="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="在此粘贴Markdown内容..."></textarea>
+                    <div class="flex gap-2">
+                        <button @click="fixPunctuation" class="flex-1 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition font-medium">一键修正</button>
+                        <button @click="punctInput = ''; punctResult = ''" class="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50">清空</button>
+                    </div>
+                    <div v-if="punctResult" class="mt-4 pt-4 border-t border-dashed border-gray-200 space-y-3">
+                        <div class="flex justify-between items-center">
+                            <label class="text-xs font-bold text-gray-500 uppercase">修正结果</label>
+                            <span class="text-xs text-green-600 font-bold">已完成</span>
+                        </div>
+                        <textarea v-model="punctResult" rows="6" class="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-sm"></textarea>
+                        <button @click="transferTo('editor', punctResult)" class="w-full py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition text-sm font-bold">
+                            下一步：直接排版 <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div v-show="currentTab === 'editor'" class="space-y-6 pb-20">
+                    
+                    <div class="space-y-2 group" :class="{'ring-2 ring-blue-500 rounded-lg p-1': activeField === 'title'}">
+                        <div class="flex justify-between items-center">
+                             <span class="text-xs font-bold text-gray-500">封面大标题</span>
+                             <div class="flex items-center gap-1 opacity-100 transition-opacity bg-gray-100 px-2 py-1 rounded">
+                                <input type="color" v-model="style.titleColor" class="w-5 h-5 rounded cursor-pointer border-0 p-0" title="标题文字颜色">
+                             </div>
+                        </div>
+                        
+                        <div 
+                            ref="titleDiv"
+                            contenteditable="true"
+                            class="editable-div w-full p-2 text-lg border-b border-gray-300 bg-transparent outline-none font-serif-sc resize-none"
+                            :style="{fontWeight: style.titleBold ? 'bold' : 'normal', minHeight: '60px'}"
+                            @input="onTitleInput"
+                            @focus="activeField = 'title'"
+                            placeholder="请输入标题..."
+                        ></div>
+                        
+                        <div class="flex justify-between items-center text-xs text-gray-400 px-1">
+                             <label class="flex items-center gap-1"><input type="checkbox" v-model="style.titleBold"> 粗体</label>
+                             <input type="range" v-model="style.titleSize" min="20" max="60" class="w-24 h-1 bg-gray-300 rounded-lg accent-gray-800">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between p-2 bg-white rounded border border-gray-200 sticky top-0 z-30 shadow-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] text-gray-400">工具</span>
+                            <button @mousedown.prevent="applyBold" class="w-6 h-6 hover:bg-gray-100 rounded text-gray-600 font-bold border border-gray-200" title="加粗">B</button>
+                        </div>
+                        <button @mousedown.prevent="insertDivider" class="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500 hover:text-blue-600 font-mono">--- 强行分页</button>
+                    </div>
+
+                    <div class="relative" :class="{'ring-2 ring-blue-500 rounded-lg': activeField === 'content'}">
+                        <div 
+                            ref="contentDiv"
+                            contenteditable="true"
+                            class="editable-div w-full p-3 border border-gray-300 rounded-lg text-sm font-mono leading-relaxed"
+                            style="min-height: 300px; max-height: 500px; overflow-y: auto;"
+                            @input="onContentInput"
+                            @focus="activeField = 'content'"
+                            placeholder="在此输入正文..."
+                        ></div>
+                        <div class="absolute bottom-2 right-4 text-[10px] text-gray-300 pointer-events-none">支持 Markdown & HTML</div>
+                    </div>
+
+                    <div class="space-y-4 pt-4 border-t border-gray-200">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <span class="text-xs text-gray-500 block mb-1">标题字体</span>
+                                <select v-model="style.titleFont" class="w-full p-1.5 text-sm border border-gray-300 rounded">
+                                    <option value="font-serif-sc">思源宋体</option>
+                                    <option value="font-sans-sc">思源黑体</option>
+                                    <option value="font-art">马善政毛笔</option>
+                                    <option value="font-hand">龙苍手书</option>
+                                </select>
+                            </div>
+                            <div>
+                                <span class="text-xs text-gray-500 block mb-1">正文字体</span>
+                                <select v-model="style.bodyFont" class="w-full p-1.5 text-sm border border-gray-300 rounded">
+                                    <option value="font-sans-sc">思源黑体</option>
+                                    <option value="font-serif-sc">思源宋体</option>
+                                    <option value="font-hand">龙苍手书</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-500">背景颜色</span>
+                            <div class="flex gap-2">
+                                <button v-for="bg in presetBgs" :key="bg.val" @click="style.bgColor=bg.val" class="w-6 h-6 rounded-full border border-gray-300 shadow-sm" :style="{background: bg.val}" :title="bg.name"></button>
+                                <input type="color" v-model="style.bgColor" class="w-6 h-6 rounded-full overflow-hidden border-0 p-0 cursor-pointer">
+                            </div>
+                        </div>
+
+                        <div>
+                             <div class="flex justify-between mb-1">
+                                <span class="text-xs text-gray-500">正文设置 (字号: {{style.fontSize}}px)</span>
+                                <label class="text-xs flex items-center gap-1"><input type="checkbox" v-model="style.bodyBold"> 全文加粗</label>
+                            </div>
+                            <input type="range" v-model="style.fontSize" min="14" max="24" class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-800">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div v-if="currentTab === 'editor'" class="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                <button @click="downloadImages" class="w-full py-3 bg-gray-900 text-white rounded-lg hover:bg-black transition shadow-lg flex justify-center items-center gap-2 font-bold">
+                    <i class="fa-solid fa-download"></i> 导出 {{ renderedPages.length }} 张卡片
+                </button>
+            </div>
+        </div>
+
+        <div ref="previewContainer" class="flex-1 h-full bg-gray-300 overflow-y-auto p-10 flex flex-col items-center gap-8 relative select-none">
+            
+            <div id="measure-box" class="prose leading-relaxed" 
+                 :class="[style.bodyFont, style.bodyBold ? 'font-bold' : 'font-normal']" 
+                 :style="{ fontSize: style.fontSize + 'px' }"></div>
+
+            <div v-for="(pageHtml, index) in renderedPages" :key="index" :id="'card-' + index"
+                 class="relative w-[420px] shrink-0 flex flex-col overflow-hidden shadow-2xl transition-all bg-white group"
+                 :style="{ 
+                      backgroundColor: style.bgColor, 
+                      minHeight: '595px',
+                      color: '#1f2937'
+                 }">
+                
+                <div class="w-full h-full p-[40px] flex flex-col relative z-10 pointer-events-none">
+                    
+                    <div v-if="index === 0 && cardTitle" class="mb-6 shrink-0 relative w-full break-words pointer-events-auto">
+                        <h1 class="whitespace-pre-wrap leading-tight"
+                            :class="[style.titleFont, style.titleAlign]"
+                            :style="{ color: style.titleColor, fontSize: style.titleSize + 'px', fontWeight: style.titleBold ? 800 : 400 }"
+                            v-html="cardTitle">
+                        </h1>
+                    </div>
+
+                    <div class="flex-1 relative prose prose-p:text-justify pointer-events-auto leading-relaxed"
+                         :class="[style.bodyFont, style.bodyBold ? 'font-bold' : '']"
+                         :style="{ fontSize: style.fontSize + 'px' }">
+                        <div v-html="pageHtml" class="w-full break-words"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-20 w-full shrink-0 text-center text-gray-500 text-sm">
+                预览区域 <br> <span class="text-xs">按 <kbd class="bg-gray-200 px-1 rounded">Enter</kbd> 键插入换行符</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, watch, nextTick, onMounted } = Vue;
+
+        const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+        turndownService.use(turndownPluginGfm.gfm);
+        marked.setOptions({ breaks: true, gfm: true });
+
+        createApp({
+            setup() {
+                const currentTab = ref('convert');
+                const activeField = ref('content'); 
+                
+                const convertResult = ref('');
+                const punctInput = ref('');
+                const punctResult = ref('');
+                
+                const cardTitle = ref('小红书笔记卡片工坊');
+                const cardContent = ref(''); 
+
+                const style = ref({
+                    titleFont: 'font-serif-sc',
+                    titleColor: '#1a1a1a',
+                    titleSize: 32,
+                    titleAlign: 'text-left',
+                    titleBold: true,
+                    bodyFont: 'font-sans-sc',
+                    fontSize: 16,
+                    bodyBold: false,
+                    bgColor: '#ffffff',
+                });
+
+                const presetBgs = [
+                    {val:'#ffffff', name:'纯白'}, {val:'#fdfbf7', name:'米白'}, 
+                    {val:'#fff1f2', name:'淡粉'}, {val:'#f0f9ff', name:'淡蓝'},
+                    {val:'#F2EBE3', name:'护眼'}
+                ];
+                
+                const renderedPages = ref([]);
+                const titleDiv = ref(null);
+                const contentDiv = ref(null);
+                const previewContainer = ref(null); 
+
+                onMounted(() => {
+                    if(titleDiv.value) titleDiv.value.innerHTML = cardTitle.value;
+                    if(contentDiv.value) contentDiv.value.innerHTML = cardContent.value;
+                    calculatePages();
+                });
+
+                const onTitleInput = (e) => { cardTitle.value = e.target.innerHTML; calculatePages(); };
+                const onContentInput = (e) => { cardContent.value = e.target.innerHTML; calculatePages(); };
+
+                watch(currentTab, async (newVal) => {
+                    if (newVal === 'editor') {
+                        await nextTick();
+                        if(titleDiv.value && titleDiv.value.innerHTML !== cardTitle.value) titleDiv.value.innerHTML = cardTitle.value;
+                        if(contentDiv.value && contentDiv.value.innerHTML !== cardContent.value) contentDiv.value.innerHTML = cardContent.value;
+                        calculatePages();
+                    }
+                });
+
+                const applyBold = () => {
+                     document.execCommand('bold');
+                     // 触发 input 事件以更新预览
+                     if(activeField.value === 'title' && titleDiv.value) titleDiv.value.dispatchEvent(new Event('input'));
+                     if(activeField.value === 'content' && contentDiv.value) contentDiv.value.dispatchEvent(new Event('input'));
+                };
+
+                const insertDivider = () => {
+                    const el = contentDiv.value;
+                    el.focus();
+                    document.execCommand('insertHTML', false, '<br>---<br>');
+                    el.dispatchEvent(new Event('input'));
+                };
+
+                const calculatePages = async () => {
+                    await nextTick();
+                    const measureBox = document.getElementById('measure-box');
+                    if (!measureBox) return;
+
+                    measureBox.innerHTML = '';
+                    const CONTENT_H = 515;
+                    const TOLERANCE = 35;
+                    
+                    let titleHeight = 0;
+                    if (cardTitle.value) {
+                         measureBox.innerHTML = `<h1 style="font-size:${style.value.titleSize}px; line-height:1.3; font-weight:${style.value.titleBold?800:400}; margin-bottom: 24px;">${cardTitle.value}</h1>`;
+                         titleHeight = measureBox.offsetHeight;
+                    }
+
+                    const rawSegments = cardContent.value.split(/<br>\s*---|<p>\s*---/); 
+                    const finalPages = [];
+                    let isFirstPage = true;
+                    let curPageHtml = ""; 
+
+                    for (let segment of rawSegments) {
+                        const htmlSegment = marked.parse(segment);
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = htmlSegment;
+                        const children = Array.from(tempDiv.children);
+
+                        let baseLimit = isFirstPage ? (CONTENT_H - titleHeight) : CONTENT_H;
+                        if (baseLimit < 50) baseLimit = CONTENT_H; 
+                        
+                        for (let block of children) {
+                            const blockHtml = block.outerHTML;
+                            measureBox.innerHTML = curPageHtml + blockHtml;
+                            const currentTotalH = measureBox.offsetHeight;
+                            
+                            if (currentTotalH <= (baseLimit + TOLERANCE)) {
+                                curPageHtml += blockHtml;
+                            } else {
+                                if (curPageHtml) {
+                                    finalPages.push(curPageHtml);
+                                    isFirstPage = false;
+                                    baseLimit = CONTENT_H;
+                                    curPageHtml = blockHtml;
+                                } else {
+                                    curPageHtml = blockHtml;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (curPageHtml) finalPages.push(curPageHtml);
+                    renderedPages.value = finalPages.length ? finalPages : [''];
+                };
+
+                const fixPunctuation = () => {
+                    let text = punctInput.value;
+                    if (!text) return;
+                    const lines = text.split('\n');
+                    const processedLines = lines.map(line => {
+                        const trimmed = line.trim();
+                        if (/^#|^>|^!\[|^`{3}|^-{3}/.test(trimmed)) return line; 
+                        let newLine = line;
+                        newLine = newLine.replace(/([^\d]),/g, '$1，');
+                        newLine = newLine.replace(/\?/g, '？').replace(/!/g, '！').replace(/;/g, '；');
+                        newLine = newLine.replace(/:(?!\/\/)/g, '：');
+                        newLine = newLine.replace(/(?<!\])\(/g, '（').replace(/(?<!\))\)/g, '）');
+                        let temp = ""; let qState = false;
+                        for(let char of newLine) {
+                            if(char === '"') { temp += qState ? '”' : '“'; qState = !qState; } else { temp += char; }
+                        }
+                        return temp;
+                    });
+                    punctResult.value = processedLines.join('\n');
+                };
+
+                const handleRichTextInput = (e) => {
+                    const html = e.target.innerHTML;
+                    if(html) convertResult.value = turndownService.turndown(html);
+                };
+
+                const handleFileConvert = (e) => {
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    if (ext === 'docx') {
+                        reader.onload = (ev) => {
+                            mammoth.convertToHtml({arrayBuffer: ev.target.result})
+                                .then(result => { convertResult.value = turndownService.turndown(result.value); })
+                                .catch(err => alert("解析失败: " + err));
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else { 
+                        reader.onload = (ev) => { convertResult.value = turndownService.turndown(ev.target.result); };
+                        reader.readAsText(file);
+                    }
+                };
+
+                const transferTo = (tab, content) => {
+                    if (tab === 'punct') punctInput.value = content;
+                    else if (tab === 'editor' && content) {
+                         const html = marked.parse(content);
+                         cardContent.value = html;
+                         if(contentDiv.value) contentDiv.value.innerHTML = html;
+                    }
+                    currentTab.value = tab;
+                };
+                
+                const switchTab = (tab) => { currentTab.value = tab; };
+
+                // 极简导出逻辑：直接截图
+                const downloadImages = async () => {
+                    const loading = document.getElementById('export-loading');
+                    loading.style.display = 'flex';
+                    await nextTick();
+                    
+                    try {
+                        for (let i = 0; i < renderedPages.value.length; i++) {
+                            const cardId = 'card-' + i;
+                            const element = document.getElementById(cardId);
+                            if (!element) continue;
+
+                            // 滚动到视野内，确保渲染
+                            element.scrollIntoView({ block: 'start' });
+                            await new Promise(r => setTimeout(r, 200));
+
+                            const canvas = await html2canvas(element, {
+                                scale: 2, // 2倍清晰度足够，且速度快
+                                useCORS: true, 
+                                backgroundColor: style.value.bgColor
+                            });
+
+                            const link = document.createElement('a');
+                            link.download = `小红书卡片_${i+1}.png`;
+                            link.href = canvas.toDataURL('image/png');
+                            link.click();
+                        }
+                    } catch (e) {
+                        alert('导出出错：' + e.message);
+                    } finally {
+                        loading.style.display = 'none';
+                    }
+                };
+
+                watch([style], calculatePages, { deep: true });
+
+                return {
+                    currentTab, activeField, switchTab,
+                    punctInput, punctResult, convertResult,
+                    cardTitle, cardContent, style, renderedPages, 
+                    titleDiv, contentDiv, previewContainer, 
+                    fixPunctuation, handleRichTextInput, handleFileConvert, transferTo,
+                    presetBgs, applyBold, insertDivider, downloadImages,
+                    onTitleInput, onContentInput
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
